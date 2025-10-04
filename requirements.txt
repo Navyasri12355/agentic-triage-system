@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+scikit-learn
+xgboost
+pandas
+numpy
+langchain
+crewai
+ortools
+pymongo
+mongita
