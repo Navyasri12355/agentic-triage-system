@@ -3,7 +3,7 @@
 An autonomous, agentic AI-based triage platform designed for resource-limited emergency settings in India.  
 It dynamically assesses patient severity, predicts resource demand (beds, oxygen, ventilators), and allocates care efficiently — all while keeping clinicians in control.
 
-Drive link to video and ppt - https://drive.google.com/drive/folders/1ah3BWG-TkTODqcH-lZrUo7v0DIlQy5HJ
+### Drive link to video and ppt - https://drive.google.com/drive/folders/1ah3BWG-TkTODqcH-lZrUo7v0DIlQy5HJ
 ---
 ## System Overview
 
@@ -69,7 +69,7 @@ python agents/allocation.py
 #did not integrate with frontend due to time constraints
 python agents/monitoring.py
 ```
-#Key Features
+# Key Features
 1. Monitoring Agent: Collects real-time vitals, symptoms, and facility data.
 2. Triage Agent: Computes severity scores using hybrid rules + ML (XGBoost).
 3. Resource Prediction Agent: Forecasts ICU/oxygen demand.
