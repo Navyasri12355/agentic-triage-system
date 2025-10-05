@@ -223,7 +223,12 @@ const PatientCard = ({ patient, onTriageComplete }) => {
 };
 
 // --- Component: Triage Detail Modal ---
-const TriageDetailModal = ({ patient, facility, onClose, removePatient }) => {
+const TriageDetailModal = ({ patient, facility, onClose, removePatient, updatePatient }) => {
+    const [isEditing, setIsEditing] = useState(false);
+    const [editedData, setEditedData] = useState({ ...patient });
+    const [rerunning, setRerunning] = useState(false);
+    const [error, setError] = useState(null);
+
     const age = new Date().getFullYear() - new Date(patient.dob).getFullYear();
 
     const handleProcess = () => {
@@ -231,8 +236,96 @@ const TriageDetailModal = ({ patient, facility, onClose, removePatient }) => {
         onClose();
     };
 
+    const handleEditChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        setError(null);
+        setEditedData(prev => ({
+            ...prev,
+            [name]: type === 'checkbox' ? (checked ? 1 : 0) : type === 'number' ? parseFloat(value) : value
+        }));
+    };
+
+    const preparePayload = (data) => {
+        const { hr, spo2, bp, dob, rr, temp, sex, dyspnea, chest_pain, confusion, comorb } = data;
+        const [sbpStr, dbpStr] = (bp || '0/0').split('/');
+        const sbp = parseFloat(sbpStr);
+        const dbp = parseFloat(dbpStr);
+        const heartRate = parseFloat(hr);
+        const oxygenSat = parseFloat(spo2);
+        const respiratoryRate = parseFloat(rr);
+        const temperature = parseFloat(temp);
+
+        if (isNaN(sbp) || isNaN(dbp) || isNaN(heartRate) || isNaN(oxygenSat) || isNaN(respiratoryRate) || isNaN(temperature) || sbp <= 0) {
+            throw new Error("Invalid vital signs data.");
+        }
+
+        const ageCalc = dob ? new Date().getFullYear() - new Date(dob).getFullYear() : 30;
+        const pulse_pressure = sbp - dbp;
+        const map = dbp + (1/3) * (sbp - dbp);
+        const shock_index = heartRate / sbp;
+
+        let abnormal_count = 0;
+        if (heartRate < 50 || heartRate > 110) abnormal_count++;
+        if (sbp < 90 || sbp > 180) abnormal_count++;
+        if (oxygenSat < 93) abnormal_count++;
+        if (respiratoryRate < 10 || respiratoryRate > 25) abnormal_count++;
+        if (temperature < 35.5 || temperature > 38.5) abnormal_count++;
+        abnormal_count += (dyspnea || 0) + (chest_pain || 0) + (confusion || 0);
+
+        return {
+            age: ageCalc, sex: sex || 1, hr: heartRate, sbp, dbp, rr: respiratoryRate, spo2: oxygenSat, temp: temperature,
+            dyspnea: dyspnea || 0, chest_pain: chest_pain || 0, confusion: confusion || 0, comorb: comorb || 0,
+            pulse_pressure, map, shock_index, abnormal_count
+        };
+    };
+
+    const handleRerunPrediction = async () => {
+        setRerunning(true);
+        setError(null);
+
+        try {
+            const payloadData = preparePayload(editedData);
+            const apiUrl = "http://127.0.0.1:8000/predict";
+            const res = await fetch(apiUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify([payloadData])
+            });
+
+            if (!res.ok) throw new Error(`API call failed: ${res.status}`);
+
+            const data = await res.json();
+            const { risk, intervention } = data[0];
+
+            let newTriageTag = 'Pending (Black)';
+            if (risk && risk.toLowerCase().includes('red')) {
+                newTriageTag = 'Immediate (Red)';
+            } else if (risk && risk.toLowerCase().includes('yellow')) {
+                newTriageTag = 'Delayed (Yellow)';
+            } else if (risk && (risk.toLowerCase().includes('green') || risk.toLowerCase().includes('low'))) {
+                newTriageTag = 'Minimal (Green)';
+            }
+
+            const updatedPatient = {
+                ...editedData,
+                triageTag: newTriageTag,
+                predictedRisk: risk.toUpperCase(),
+                recommendedIntervention: intervention,
+            };
+
+            setEditedData(updatedPatient);
+            updatePatient(updatedPatient);
+            setIsEditing(false);
+        } catch (err) {
+            console.error("Prediction failed:", err);
+            setError(`Prediction failed: ${err.message}. Ensure FastAPI server is running.`);
+        } finally {
+            setRerunning(false);
+        }
+    };
+
     let headerColor;
-    switch (patient.triageTag) {
+    switch (editedData.triageTag) {
         case 'Immediate (Red)':
             headerColor = 'bg-red-600';
             break;
@@ -246,44 +339,124 @@ const TriageDetailModal = ({ patient, facility, onClose, removePatient }) => {
             headerColor = 'bg-gray-500';
     }
 
+    const inputClass = "w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white text-sm";
+
     return (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-75 dark:bg-opacity-80 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden transform transition-all duration-300 scale-100">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full overflow-y-auto max-h-[95vh] transform transition-all duration-300 scale-100">
                 
-                <div className={`p-6 ${headerColor} text-white`}>
-                    <h3 className="text-3xl font-extrabold">{patient.name}</h3>
-                    <p className="text-sm opacity-80">Triage Tag: <span className="font-semibold">{patient.triageTag}</span></p>
+                <div className={`p-6 ${headerColor} text-white relative`}>
+                    <button
+                        onClick={onClose}
+                        className="absolute top-4 right-4 text-white hover:text-gray-200 transition"
+                        title="Close"
+                    >
+                        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                    <h3 className="text-3xl font-extrabold pr-12">{editedData.name}</h3>
+                    <p className="text-sm opacity-80">Triage Tag: <span className="font-semibold">{editedData.triageTag}</span></p>
                 </div>
 
                 <div className="p-6 space-y-4">
                     <div className="grid grid-cols-2 gap-4 text-sm dark:text-white">
-                        <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg"><strong>Patient ID:</strong> {patient.id.substring(0, 12)}...</div>
+                        <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg"><strong>Patient ID:</strong> {editedData.id.substring(0, 12)}...</div>
                         <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg"><strong>Age:</strong> {age} years</div>
-                        <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg"><strong>DOB:</strong> {patient.dob}</div>
-                        <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg"><strong>Arrival:</strong> {new Date(patient.timestamp).toLocaleTimeString()}</div>
+                        <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg"><strong>DOB:</strong> {editedData.dob}</div>
+                        <div className="p-3 bg-gray-100 dark:bg-gray-700 rounded-lg"><strong>Arrival:</strong> {new Date(editedData.timestamp).toLocaleTimeString()}</div>
                     </div>
 
-                    <h4 className="text-lg font-bold text-indigo-700 dark:text-indigo-400 mt-4 border-b pb-1 border-gray-200 dark:border-gray-700">Vitals & Assessment</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm dark:text-white">
-                        <div className="text-center p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">HR: <span className="font-bold">{patient.hr}</span></div>
-                        <div className="text-center p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">BP: <span className="font-bold">{patient.bp}</span></div>
-                        <div className="text-center p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">RR: <span className="font-bold">{patient.rr}</span></div>
-                        <div className="text-center p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">Temp: <span className="font-bold">{patient.temp}°C</span></div>
-                        <div className="text-center p-2 bg-blue-100 dark:bg-blue-900 rounded-lg col-span-2">SpO₂: <span className="font-bold">{patient.spo2}%</span></div>
+                    <div className="flex justify-between items-center">
+                        <h4 className="text-lg font-bold text-indigo-700 dark:text-indigo-400 border-b pb-1 border-gray-200 dark:border-gray-700 flex-1">Vitals & Assessment</h4>
+                        <button
+                            onClick={() => setIsEditing(!isEditing)}
+                            className="px-4 py-2 bg-indigo-600 text-white text-sm font-semibold rounded-lg hover:bg-indigo-700 transition"
+                        >
+                            {isEditing ? 'Cancel Edit' : 'Edit Vitals'}
+                        </button>
                     </div>
+
+                    {!isEditing ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm dark:text-white">
+                            <div className="text-center p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">HR: <span className="font-bold">{editedData.hr}</span></div>
+                            <div className="text-center p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">BP: <span className="font-bold">{editedData.bp}</span></div>
+                            <div className="text-center p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">RR: <span className="font-bold">{editedData.rr}</span></div>
+                            <div className="text-center p-2 bg-blue-100 dark:bg-blue-900 rounded-lg">Temp: <span className="font-bold">{editedData.temp}°C</span></div>
+                            <div className="text-center p-2 bg-blue-100 dark:bg-blue-900 rounded-lg col-span-2">SpO₂: <span className="font-bold">{editedData.spo2}%</span></div>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-xs font-medium dark:text-gray-300">HR</label>
+                                    <input type="number" name="hr" value={editedData.hr} onChange={handleEditChange} className={inputClass} />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium dark:text-gray-300">SpO₂ (%)</label>
+                                    <input type="number" name="spo2" value={editedData.spo2} onChange={handleEditChange} className={inputClass} />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium dark:text-gray-300">BP</label>
+                                    <input type="text" name="bp" value={editedData.bp} onChange={handleEditChange} className={inputClass} placeholder="120/80" />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium dark:text-gray-300">Temp (°C)</label>
+                                    <input type="number" name="temp" value={editedData.temp} onChange={handleEditChange} className={inputClass} step="0.1" />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-medium dark:text-gray-300">RR</label>
+                                    <input type="number" name="rr" value={editedData.rr} onChange={handleEditChange} className={inputClass} />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                <label className="flex items-center p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white cursor-pointer text-xs">
+                                    <input type="checkbox" name="dyspnea" checked={editedData.dyspnea === 1} onChange={handleEditChange} className="h-4 w-4 text-teal-600 rounded mr-2" />
+                                    Dyspnea
+                                </label>
+                                <label className="flex items-center p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white cursor-pointer text-xs">
+                                    <input type="checkbox" name="chest_pain" checked={editedData.chest_pain === 1} onChange={handleEditChange} className="h-4 w-4 text-teal-600 rounded mr-2" />
+                                    Chest Pain
+                                </label>
+                                <label className="flex items-center p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white cursor-pointer text-xs">
+                                    <input type="checkbox" name="confusion" checked={editedData.confusion === 1} onChange={handleEditChange} className="h-4 w-4 text-teal-600 rounded mr-2" />
+                                    Confusion
+                                </label>
+                                <label className="flex items-center p-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white cursor-pointer text-xs">
+                                    <input type="checkbox" name="comorb" checked={editedData.comorb === 1} onChange={handleEditChange} className="h-4 w-4 text-teal-600 rounded mr-2" />
+                                    Comorbidity
+                                </label>
+                            </div>
+
+                            <button
+                                onClick={handleRerunPrediction}
+                                disabled={rerunning}
+                                className="w-full px-4 py-3 bg-teal-500 text-white font-semibold rounded-lg hover:bg-teal-600 transition disabled:opacity-50"
+                            >
+                                {rerunning ? 'Recalculating...' : 'Rerun Prediction with Updated Vitals'}
+                            </button>
+
+                            {error && (
+                                <div className="p-2 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded-lg text-xs">
+                                    {error}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     <h4 className="text-lg font-bold text-indigo-700 dark:text-indigo-400 mt-4 border-b pb-1 border-gray-200 dark:border-gray-700">Prediction Results</h4>
                     <div className="space-y-2 dark:text-white">
                         <div className="p-3 bg-red-100 dark:bg-red-900/50 rounded-lg shadow-sm border border-red-300 dark:border-red-700">
-                            <strong>Predicted Risk:</strong> <span className='font-bold text-red-700 dark:text-red-300'>{patient.predictedRisk || 'N/A'}</span>
+                            <strong>Predicted Risk:</strong> <span className='font-bold text-red-700 dark:text-red-300'>{editedData.predictedRisk || 'N/A'}</span>
                         </div>
                         <div className="p-3 bg-teal-100 dark:bg-teal-900/50 rounded-lg shadow-sm border border-teal-300 dark:border-teal-700">
-                            <strong>Recommended Intervention:</strong> <span className='font-medium text-teal-700 dark:text-teal-300'>{patient.recommendedIntervention || 'N/A'}</span>
+                            <strong>Recommended Intervention:</strong> <span className='font-medium text-teal-700 dark:text-teal-300'>{editedData.recommendedIntervention || 'N/A'}</span>
                         </div>
                     </div>
 
                     <h4 className="text-lg font-bold text-indigo-700 dark:text-indigo-400 mt-4 border-b pb-1 border-gray-200 dark:border-gray-700">Symptoms/Notes</h4>
-                    <p className="text-gray-700 dark:text-gray-300 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg italic">{patient.symptoms}</p>
+                    <p className="text-gray-700 dark:text-gray-300 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg italic">{editedData.symptoms}</p>
                 </div>
                 
                 <div className="p-6 bg-gray-100 dark:bg-gray-700 flex justify-between items-center">
