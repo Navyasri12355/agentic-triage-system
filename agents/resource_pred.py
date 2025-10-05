@@ -1,6 +1,5 @@
 
 
-%%writefile agents/resource_pred.py
 import os
 import sys
 import logging
