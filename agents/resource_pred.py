@@ -1,65 +1,137 @@
 
-
 import os
 import sys
 import logging
 import pandas as pd
-from flask import Flask, jsonify, request
 from prophet import Prophet
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import to_timestamp
 from datetime import datetime, timedelta
 import joblib
+import numpy as np
+import time
 
-# UPDATED: Smarter way to get project_root for Colab/Script execution
-# Determine project_root based on the execution context
-if '__file__' in locals():
-    # If run as a script (e.g., python agents/resource_pred.py)
-    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-else:
-    # If run directly in a Jupyter/Colab cell
-    # Assumes the notebook's working directory is the project root /content/
-    project_root = '/content' 
+# --- FastAPI and Pydantic Imports ---
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List, Optional, Dict
 
-sys.path.append(project_root) # Add project root to sys.path to find 'api' module
 
-# Import from the 'api' directory
-from api.api_models import ResourceForecastItem, ResourceForecastResponse, HospitalResource
-from typing import List, Dict
+# --- Embedded api_models.py classes (simplified to only what's needed for output) ---
+# Note: For a real project, you would import these from a shared api_models.py file.
+# They are embedded here for the "single file" requirement.
+class Vitals(BaseModel): # Included for completeness, though not directly used in this agent's API
+    heart_rate: int
+    blood_pressure_systolic: int
+    blood_pressure_diastolic: int
+    respiratory_rate: int
+    temperature: float
+    oxygen_saturation: float
+    consciousness_level: str
+    pain_level: Optional[int]
+
+class PatientInflow(BaseModel): # Included for completeness
+    patient_id: str
+    timestamp: datetime = datetime.now()
+    gender: str
+    age: int
+    presenting_complaint: str
+    vitals: Vitals
+
+class HospitalResource(BaseModel): # Included for completeness and potential mock data if needed
+    hospital_id: str
+    name: str
+    location: str
+    icu_beds_total: int
+    icu_beds_occupied: int
+    ventilators_total: int
+    ventilators_occupied: int
+    oxygen_cylinders_total: Optional[int] = 0
+    oxygen_cylinders_occupied: Optional[int] = 0
+    current_patients_count: int
+    max_capacity: int
+
+class ResourceForecastItem(BaseModel):
+    timestamp: datetime
+    icu_demand_forecast: int
+    ventilator_demand_forecast: int
+    oxygen_demand_forecast: int
+
+class ResourceForecastResponse(BaseModel):
+    forecast: List[ResourceForecastItem]
+
+# --- End of Embedded api_models.py classes ---
+
+
+# --- Embedded generate_dummy_demand.py logic ---
+def generate_dummy_data_func(start_date, end_date, output_path):
+    dates = pd.date_range(start=start_date, end=end_date, freq='H')
+    data = []
+    for i, ts in enumerate(dates):
+        base_icu = 10 + 5 * np.sin(i / 24 * 2 * np.pi) + 3 * np.sin(i / (24*7) * 2 * np.pi)
+        base_vent = 5 + 3 * np.sin(i / 24 * 2 * np.pi) + 2 * np.sin(i / (24*7) * 2 * np.pi)
+        base_oxygen = 50 + 15 * np.sin(i / 12 * 2 * np.pi) + 10 * np.sin(i / (24*7) * 2 * np.pi) + 0.1 * (i / (24*30))
+
+        icu_demand = max(0, round(base_icu + np.random.normal(0, 2)))
+        ventilator_demand = max(0, round(base_vent + np.random.normal(0, 1)))
+        oxygen_demand = max(0, round(base_oxygen + np.random.normal(0, 5)))
+
+        data.append({
+            'timestamp': ts,
+            'icu_demand': icu_demand,
+            'ventilator_demand': ventilator_demand,
+            'oxygen_demand': oxygen_demand
+        })
+            
+    df = pd.DataFrame(data)
+    
+    temp_output_path = output_path + ".tmp"
+    try:
+        df.to_csv(temp_output_path, index=False)
+        os.rename(temp_output_path, output_path)
+        logger.info(f"Successfully generated dummy data and saved to '{output_path}'.")
+    except Exception as e:
+        logger.error(f"Error saving dummy data to '{output_path}': {e}", exc_info=True)
+        if os.path.exists(temp_output_path):
+            os.remove(temp_output_path)
+        raise
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__) # Flask app instance
+# --- FastAPI App Initialization ---
+app = FastAPI(title="Resource Prediction Agent")
 
-# --- Model File Path ---
-MODEL_PATH = os.path.join(project_root, "models", "resource_forecast.pkl")
-DATA_PATH = os.path.join(project_root, "data", "historical_demand.csv")
+# Allow frontend requests (React/Streamlit)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-# Initialize SparkSession in local mode
-spark = SparkSession.builder \
-    .appName("ResourcePredictionAgent") \
-    .master("local[*]") \
-    .config("spark.driver.memory", "4g") \
-    .getOrCreate()
-logger.info("Spark Session initialized.")
+# --- Model and Data File Paths ---
+MODEL_PATH = "resource_forecast.pkl"
+DATA_PATH = "historical_demand.csv"
 
-# --- Helper function to load historical data (using Spark) ---
+# --- Helper function to load historical data (using Pandas directly) ---
 def get_historical_demand_data() -> pd.DataFrame:
     """
-    Loads historical demand data using Spark, then converts to Pandas DataFrame.
+    Loads historical demand data using Pandas directly from CSV.
     """
+    logger.info(f"Attempting to read '{DATA_PATH}' from current directory: '{os.getcwd()}'")
+    logger.info(f"Directory contents before read: {os.listdir(os.getcwd())}")
     try:
-        spark_df = spark.read.csv(DATA_PATH, header=True, inferSchema=True)
-        spark_df = spark_df.withColumn("timestamp", to_timestamp(spark_df["timestamp"]))
-        logger.info(f"Loaded {spark_df.count()} historical records using Spark from {DATA_PATH}")
-        pd_df = spark_df.toPandas()
-        return pd_df
-    except FileNotFoundError:
-        logger.error(f"Historical data file not found at {DATA_PATH}. Please ensure it exists and has been generated.")
-        return pd.DataFrame(columns=['timestamp', 'icu_demand', 'ventilator_demand', 'oxygen_demand'])
+        if not os.path.exists(DATA_PATH):
+            logger.error(f"File '{DATA_PATH}' does not exist at '{os.getcwd()}' before pandas attempts to read.")
+            return pd.DataFrame(columns=['timestamp', 'icu_demand', 'ventilator_demand', 'oxygen_demand'])
+
+        df = pd.read_csv(DATA_PATH)
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        logger.info(f"Successfully loaded {len(df)} historical records using Pandas from {DATA_PATH}")
+        return df
     except Exception as e:
-        logger.error(f"Error loading historical data with Spark from {DATA_PATH}: {e}", exc_info=True)
+        logger.error(f"Error loading historical data with Pandas from {DATA_PATH} (in '{os.getcwd()}'): {e}", exc_info=True)
         return pd.DataFrame(columns=['timestamp', 'icu_demand', 'ventilator_demand', 'oxygen_demand'])
 
 # --- Forecasting Logic to incorporate saving/loading for all three resources ---
@@ -71,27 +143,23 @@ def generate_forecast(horizon_hours: int = 24, retrain_if_needed: bool = True) -
     model_oxygen = None
     
     # Try to load the combined models
-    # We also create a 'models' directory here if it doesn't exist, as it's needed for saving
-    models_dir = os.path.join(project_root, "models")
-    os.makedirs(models_dir, exist_ok=True) # Ensure models directory exists
-
     if os.path.exists(MODEL_PATH) and retrain_if_needed:
         try:
             combined_models = joblib.load(MODEL_PATH)
             model_icu = combined_models.get("icu_model")
             model_vent = combined_models.get("vent_model")
             model_oxygen = combined_models.get("oxygen_model")
-            if model_icu and model_vent and model_oxygen: # Ensure all models were loaded
+            if model_icu and model_vent and model_oxygen:
                 logger.info(f"Loaded combined Prophet models from {MODEL_PATH}.")
             else:
                 logger.warning(f"Combined models from {MODEL_PATH} incomplete or corrupt. Retraining will occur.")
-                model_icu, model_vent, model_oxygen = None, None, None # Force retraining if incomplete
+                model_icu, model_vent, model_oxygen = None, None, None
         except Exception as e:
             logger.warning(f"Could not load combined models from {MODEL_PATH}: {e}. Retraining will occur.")
-            model_icu, model_vent, model_oxygen = None, None, None # Force retraining if loading fails
+            model_icu, model_vent, model_oxygen = None, None, None
 
     # If models not loaded (or if retraining forced)
-    if model_icu is None or model_vent is None or model_oxygen is None: # Check for all three
+    if model_icu is None or model_vent is None or model_oxygen is None:
         logger.info("Training/Retraining all ICU, Ventilator, and Oxygen Prophet models...")
         
         historical_df = get_historical_demand_data()
@@ -126,7 +194,7 @@ def generate_forecast(horizon_hours: int = 24, retrain_if_needed: bool = True) -
     forecasts = []
 
     # Generate forecast using the (loaded or newly trained) models
-    if model_icu and model_vent and model_oxygen: # Ensure all three models are available
+    if model_icu and model_vent and model_oxygen:
         # ICU Forecast
         future_icu = model_icu.make_future_dataframe(periods=horizon_hours, freq='H')
         forecast_icu = model_icu.predict(future_icu)
@@ -175,23 +243,58 @@ def generate_forecast(horizon_hours: int = 24, retrain_if_needed: bool = True) -
     logger.info(f"Generated {len(forecasts)} forecast items.")
     return forecasts
 
-# --- Flask API Endpoints ---
-@app.route("/resource_forecast", methods=["GET"])
-def get_resource_forecast():
-    horizon_hours = request.args.get('horizon_hours', default=24, type=int)
-    logger.info(f"Received request for resource forecast for {horizon_hours} hours.")
+# --- FastAPI API Endpoints ---
+@app.on_event("startup")
+async def startup_event():
+    """Ensures model and data are ready when FastAPI starts."""
+    current_working_dir = os.getcwd()
+    logger.info(f"FastAPI startup: Current working directory is '{current_working_dir}'")
 
+    # Ensure dummy data exists
+    if not os.path.exists(DATA_PATH):
+        logger.info(f"'{DATA_PATH}' not found. Generating dummy historical data...")
+        try:
+            generate_dummy_data_func(datetime.now() - timedelta(days=90), datetime.now(), DATA_PATH)
+            logger.info(f"Dummy data generated and saved to '{DATA_PATH}'.")
+        except Exception as e:
+            logger.error(f"FastAPI startup failed: Error generating dummy data: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail="Failed to generate initial data.")
+    else:
+        logger.info(f"'{DATA_PATH}' found. Skipping dummy data generation.")
+    
+    # Pre-train/load model for initial setup
+    logger.info("FastAPI startup: Pre-training/loading model...")
     try:
-        forecast_data = generate_forecast(horizon_hours=horizon_hours, retrain_if_needed=True)
-        response = ResourceForecastResponse(forecast=forecast_data)
-        return jsonify({"forecast": [item.dict() for item in forecast_data]}), 200
+        # Generate a small forecast to trigger model train/load/save
+        _ = generate_forecast(horizon_hours=1, retrain_if_needed=True) 
+        logger.info(f"FastAPI startup: Model training/loading complete. Model saved/verified at '{MODEL_PATH}'.")
     except Exception as e:
-        logger.error(f"Error generating forecast: {e}", exc_info=True)
-        return jsonify({"error": str(e), "message": "Failed to generate resource forecast"}), 500
+        logger.error(f"FastAPI startup failed: Error in model generation/loading: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to load/train model on startup.")
 
-@app.route("/hospital_status", methods=["GET"])
-def get_hospital_status():
-    logger.info("Providing mock hospital status.")
+
+@app.get("/")
+async def root():
+    return {
+        "status": "Resource Prediction Agent Running",
+        "model_loaded": os.path.exists(MODEL_PATH), # Check if model file exists
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/resource_forecast", response_model=ResourceForecastResponse)
+async def get_resource_forecast_api(horizon_hours: int = 24):
+    logger.info(f"API request for resource forecast for {horizon_hours} hours.")
+    try:
+        # Use the existing generate_forecast function
+        forecast_data = generate_forecast(horizon_hours=horizon_hours, retrain_if_needed=True)
+        return ResourceForecastResponse(forecast=forecast_data)
+    except Exception as e:
+        logger.error(f"Error generating forecast for API: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate resource forecast: {e}")
+
+@app.get("/hospital_status", response_model=List[HospitalResource])
+async def get_hospital_status_api():
+    logger.info("API request for mock hospital status.")
     mock_hospitals = [
         HospitalResource(
             hospital_id="HOSP001",
@@ -205,7 +308,7 @@ def get_hospital_status():
             oxygen_cylinders_occupied=60,
             current_patients_count=150,
             max_capacity=200
-        ).dict(),
+        ),
         HospitalResource(
             hospital_id="HOSP002",
             name="Community Care Center",
@@ -218,7 +321,7 @@ def get_hospital_status():
             oxygen_cylinders_occupied=20,
             current_patients_count=80,
             max_capacity=100
-        ).dict(),
+        ),
         HospitalResource(
             hospital_id="HOSP003",
             name="Regional Trauma Center",
@@ -231,22 +334,15 @@ def get_hospital_status():
             oxygen_cylinders_occupied=100,
             current_patients_count=250,
             max_capacity=300
-        ).dict()
+        )
     ]
-    return jsonify(mock_hospitals), 200
+    return mock_hospitals
 
+# --- CLI Execution (For Uvicorn to run the app) ---
 if __name__ == "__main__":
-    # To pre-train the model and save the .pkl file when running this script directly:
-    print("--- Running Resource Prediction Agent (Standalone Mode) ---")
-    print("Pre-training/loading model for initial setup...")
-    generate_forecast(horizon_hours=1, retrain_if_needed=True) # Run forecast once to trigger train/load
-    print(f"Model training/loading complete. Model saved/verified at {MODEL_PATH}")
-
-    # To run the web server for this agent AFTER the model is trained/saved:
-    print("\nStarting Flask web server...")
-    # Set FLASK_APP environment variable (important for Flask CLI)
-    os.environ['FLASK_APP'] = 'agents.resource_pred:app' 
-    # Run Flask application using os.system for Colab compatibility
-    os.system('flask run --port 5002 --host 0.0.0.0') 
-    # Note: In a Colab cell, os.system('flask run') will block execution.
-    # For background Flask server with ngrok, use the threading approach from previous instructions.
+    # This block is here for clarity, but you typically run FastAPI with 'uvicorn' directly.
+    # The 'uvicorn' command will automatically call the 'startup_event'.
+    logger.info("This script is usually run via 'uvicorn'. Starting Uvicorn manually for direct execution...")
+    import uvicorn
+    # If historical_demand.csv doesn't exist, this will be handled by startup_event
+    uvicorn.run(app, host="0.0.0.0", port=5002)
