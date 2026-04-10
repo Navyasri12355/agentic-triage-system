@@ -1,10 +1,20 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Tuple
 from ortools.linear_solver import pywraplp
 import math, random
 
 app = FastAPI(title="Allocation & Routing Agent API")
+
+# Add CORS middleware for frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ---------------------------
 # Pydantic Models
@@ -97,9 +107,18 @@ def home():
     return {"message": "Allocation Agent API is running!"}
 
 @app.post("/allocate", response_model=List[AllocationResult])
-def allocate(patients: List[Patient], hospitals: List[Hospital]):
-    patient_dicts = [p.dict() for p in patients]
-    hospital_dicts = [h.dict() for h in hospitals]
+def allocate(request: dict):
+    """Allocate patients to hospitals based on distance and capacity constraints."""
+    patients = request.get("patients", [])
+    hospitals = request.get("hospitals", [])
+
+    if not patients or not hospitals:
+        return []
+
+    # Convert dict-based patients/hospitals to proper format
+    patient_dicts = patients if isinstance(patients[0], dict) else [p.dict() for p in patients]
+    hospital_dicts = hospitals if isinstance(hospitals[0], dict) else [h.dict() for h in hospitals]
+
     return allocation_agent_main(patient_dicts, hospital_dicts)
 
 # ---------------------------
