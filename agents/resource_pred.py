@@ -64,7 +64,7 @@ class ResourceForecastResponse(BaseModel):
 
 # --- Embedded generate_dummy_demand.py logic ---
 def generate_dummy_data_func(start_date, end_date, output_path):
-    dates = pd.date_range(start=start_date, end=end_date, freq='H')
+    dates = pd.date_range(start=start_date, end=end_date, freq='h')
     data = []
     for i, ts in enumerate(dates):
         base_icu = 10 + 5 * np.sin(i / 24 * 2 * np.pi) + 3 * np.sin(i / (24*7) * 2 * np.pi)
@@ -196,17 +196,17 @@ def generate_forecast(horizon_hours: int = 24, retrain_if_needed: bool = True) -
     # Generate forecast using the (loaded or newly trained) models
     if model_icu and model_vent and model_oxygen:
         # ICU Forecast
-        future_icu = model_icu.make_future_dataframe(periods=horizon_hours, freq='H')
+        future_icu = model_icu.make_future_dataframe(periods=horizon_hours, freq='h')
         forecast_icu = model_icu.predict(future_icu)
         icu_preds_df = forecast_icu[['ds', 'yhat']].tail(horizon_hours)
 
         # Ventilator Forecast
-        future_vent = model_vent.make_future_dataframe(periods=horizon_hours, freq='H')
+        future_vent = model_vent.make_future_dataframe(periods=horizon_hours, freq='h')
         forecast_vent = model_vent.predict(future_vent)
         vent_preds_df = forecast_vent[['ds', 'yhat']].tail(horizon_hours)
 
         # Oxygen Forecast
-        future_oxygen = model_oxygen.make_future_dataframe(periods=horizon_hours, freq='H')
+        future_oxygen = model_oxygen.make_future_dataframe(periods=horizon_hours, freq='h')
         forecast_oxygen = model_oxygen.predict(future_oxygen)
         oxygen_preds_df = forecast_oxygen[['ds', 'yhat']].tail(horizon_hours)
 
