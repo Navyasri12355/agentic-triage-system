@@ -10,11 +10,11 @@ An autonomous, agentic AI-based triage platform designed for resource-limited em
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    React + Vite Frontend (5173)                │
+│                    React + Vite Frontend (5173)                 │
 │         - Triage Dashboard                                      │
-│         - Patient Intake & Assessment                          │
-│         - Resource Forecasting                                 │
-│         - Patient Allocation Results                          │
+│         - Patient Intake & Assessment                           │
+│         - Resource Forecasting                                  │
+│         - Patient Allocation Results                            │
 └────────────────────┬────────────────────────────────────────────┘
                      │ HTTP/CORS Requests
     ┌────────────────┼────────────────┬─────────────────┐
@@ -36,7 +36,7 @@ An autonomous, agentic AI-based triage platform designed for resource-limited em
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
@@ -93,7 +93,7 @@ startup.bat            # Windows
 
 ---
 
-## 🏥 Agents Overview
+## Agents Overview
 
 ### 1. **Triage Agent** (Port 8000)
 **Purpose:** Real-time patient severity assessment
@@ -169,7 +169,7 @@ startup.bat            # Windows
 
 ---
 
-## 📊 Technology Stack
+##  Technology Stack
 
 ### Frontend
 - **React 18.2** - UI framework
@@ -191,7 +191,7 @@ startup.bat            # Windows
 
 ---
 
-## 🧪 Testing APIs
+## Testing APIs
 
 ### Using curl
 
@@ -223,7 +223,7 @@ curl -X POST http://127.0.0.1:8001/allocate \
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 agentic-triage-system/
@@ -265,7 +265,7 @@ agentic-triage-system/
 
 ---
 
-## 🔧 Development
+## Development
 
 ### Frontend Development
 ```bash
@@ -284,7 +284,7 @@ http://127.0.0.1:8002/docs
 
 ---
 
-## ⚠️ Known Limitations & Future Work
+## Known Limitations & Future Work
 
 ### Current State
 - CORS open to all origins (dev only)
@@ -293,16 +293,16 @@ http://127.0.0.1:8002/docs
 - Models are not auto-trained; requires pre-trained files
 
 ### Planned Features
-- 🔒 JWT/OAuth authentication
-- 💾 Persistent database (MongoDB/SQL)
-- 🔌 Unified API Gateway (single port)
-- 📡 WebSocket real-time updates
-- 📊 Advanced analytics dashboard
-- 📱 Mobile app integration
+- JWT/OAuth authentication
+- Persistent database (MongoDB/SQL)
+- Unified API Gateway (single port)
+- WebSocket real-time updates
+- Advanced analytics dashboard
+- Mobile app integration
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### "Cannot find module" errors
 ```bash
@@ -327,14 +327,6 @@ pip install --upgrade prophet pandas
 
 ---
 
-## 📄 License
+## License
 
 MIT License - See LICENSE file for details
-
----
-
-## 👥 Contributing
-
-This project was developed as part of an academic initiative to improve emergency response systems in resource-limited settings.
-
-For issues or contributions, please refer to the repository.

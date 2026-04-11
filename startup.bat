@@ -3,7 +3,7 @@ REM startup.bat - Start all backend agents on Windows
 
 echo.
 echo ╔════════════════════════════════════════════════════╗
-echo ║   Emergency Triage System - Backend Startup       ║
+echo ║   Emergency Triage System - Backend Startup        ║
 echo ╚════════════════════════════════════════════════════╝
 echo.
 
