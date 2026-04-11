@@ -10,3 +10,5 @@ ortools
 pymongo
 mongita
 python-multipart
+paho-mqtt
+prophet

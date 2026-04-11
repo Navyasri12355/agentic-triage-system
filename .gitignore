@@ -10,7 +10,7 @@ node_modules/
 *.so
 
 # Model files
-.pkl
+*.pkl
 
 # Distribution / packaging
 .Python
