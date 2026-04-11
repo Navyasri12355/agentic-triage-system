@@ -2,9 +2,9 @@
 REM startup.bat - Start all backend agents and frontend on Windows
 
 echo.
-echo ╔════════════════════════════════════════════════════╗
-echo ║   Emergency Triage System - Full Startup           ║
-echo ╚════════════════════════════════════════════════════╝
+echo =====================================================
+echo    Emergency Triage System - Full Startup
+echo =====================================================
 echo.
 
 REM Check if virtual environment exists
@@ -64,7 +64,7 @@ echo ▶ Launching Monitoring Agent on port 8002...
 start "Monitoring Agent (8002)" cmd /k "venv\Scripts\activate && uvicorn agents.monitoring:app --reload --port 8002"
 
 echo.
-echo ═════════════════════════════════════════════════════
+echo =====================================================
 echo ✓ All services started!
 echo.
 echo Frontend:
@@ -76,5 +76,5 @@ echo    Resource Predict  ^> http://127.0.0.1:5002
 echo    Allocation Agent  ^> http://127.0.0.1:8001
 echo    Monitoring Agent  ^> http://127.0.0.1:8002
 echo.
-echo ═════════════════════════════════════════════════════
+echo =====================================================
 pause

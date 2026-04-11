@@ -7,9 +7,7 @@ BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${BLUE}╔════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║   Emergency Triage System - Full Startup           ║${NC}"
-echo -e "${BLUE}╚════════════════════════════════════════════════════╝${NC}"
+echo -e "${BLUE}=====================================================\n   Emergency Triage System - Full Startup          \n=====================================================${NC}"
 
 # Check if virtual environment exists
 if [ ! -d "venv" ]; then
@@ -68,7 +66,7 @@ run_agent "Monitoring Agent" "agents.monitoring" 8002
 sleep 2
 
 echo ""
-echo -e "${BLUE}═════════════════════════════════════════════════════${NC}"
+echo -e "${BLUE}=====================================================${NC}"
 echo -e "${GREEN}✓ All services started!${NC}"
 echo ""
 echo -e "${BLUE}Frontend:${NC}"
@@ -89,4 +87,4 @@ echo ""
 echo -e "${YELLOW}To stop all services:${NC}"
 echo -e "  pkill -f 'npm run dev'"
 echo -e "  pkill -f 'uvicorn agents'"
-echo "/════════════════════════════════════════════════════"
+echo "====================================================="
