@@ -111,8 +111,12 @@ app.add_middleware(
 )
 
 # --- Model and Data File Paths ---
-MODEL_PATH = "resource_forecast.pkl"
-DATA_PATH = "historical_demand.csv"
+MODEL_PATH = os.path.join("models", "resource_forecast.pkl")
+DATA_PATH = os.path.join("data", "historical_demand.csv")
+
+# Ensure directories exist
+os.makedirs("models", exist_ok=True)
+os.makedirs("data", exist_ok=True)
 
 # --- Helper function to load historical data (using Pandas directly) ---
 def get_historical_demand_data() -> pd.DataFrame:
