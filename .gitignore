@@ -12,6 +12,11 @@ node_modules/
 # Model files
 *.pkl
 
+# Generated data files
+data/historical_demand.csv
+data/triage_output.csv
+data/patients.csv
+
 # Distribution / packaging
 .Python
 build/
