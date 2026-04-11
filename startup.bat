@@ -1,9 +1,9 @@
 @echo off
-REM startup.bat - Start all backend agents on Windows
+REM startup.bat - Start all backend agents and frontend on Windows
 
 echo.
 echo ╔════════════════════════════════════════════════════╗
-echo ║   Emergency Triage System - Backend Startup        ║
+echo ║   Emergency Triage System - Full Startup           ║
 echo ╚════════════════════════════════════════════════════╝
 echo.
 
@@ -23,14 +23,26 @@ if errorlevel 1 (
     pip install -r requirements.txt
 )
 
+REM Install frontend dependencies if needed
+if not exist "node_modules" (
+    echo Installing frontend dependencies...
+    call npm install
+)
+
 echo ✓ Environment ready
 echo.
-echo Starting backend agents...
-echo Note: Each agent runs in a separate command prompt window
+echo Starting frontend and backend agents...
+echo Note: Frontend and each agent runs in a separate command prompt window
 echo.
 
 REM Create logs directory
 if not exist "logs" mkdir logs
+
+REM Start frontend in a separate window
+echo ▶ Launching Frontend (React + Vite) on port 5173...
+start "Frontend (5173)" cmd /k "npm run dev"
+
+timeout /t 3 /nobreak
 
 REM Start all agents in separate windows
 echo ▶ Launching Triage Agent on port 8000...
@@ -53,16 +65,16 @@ start "Monitoring Agent (8002)" cmd /k "venv\Scripts\activate && uvicorn agents.
 
 echo.
 echo ═════════════════════════════════════════════════════
-echo ✓ All backend agents started!
-echo.
-echo API Endpoints:
-echo   🔬 Triage Agent      ^> http://127.0.0.1:8000
-echo   📊 Resource Predict  ^> http://127.0.0.1:5002
-echo   🏥 Allocation Agent  ^> http://127.0.0.1:8001
-echo   ⚕️  Monitoring Agent  ^> http://127.0.0.1:8002
+echo ✓ All services started!
 echo.
 echo Frontend:
-echo   🎯 Web Dashboard     ^> http://localhost:5173
+echo    Web Dashboard     ^> http://localhost:5173
+echo.
+echo API Endpoints:
+echo    Triage Agent      ^> http://127.0.0.1:8000
+echo    Resource Predict  ^> http://127.0.0.1:5002
+echo    Allocation Agent  ^> http://127.0.0.1:8001
+echo    Monitoring Agent  ^> http://127.0.0.1:8002
 echo.
 echo ═════════════════════════════════════════════════════
 pause
